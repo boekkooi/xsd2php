@@ -1,20 +1,19 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Command;
 
-use Goetas\Xsd\XsdToPhp\Php\PhpConverter;
-use Goetas\Xsd\XsdToPhp\Php\ClassGenerator;
+use Goetas\Xsd\XsdToPhp\Code\Generator\ClassGenerator;
+use Goetas\Xsd\XsdToPhp\Converter\Configuration;
+use Goetas\Xsd\XsdToPhp\Converter\Converter;
+use Goetas\Xsd\XsdToPhp\Php\PathGenerator\PathGenerator;
 use Goetas\Xsd\XsdToPhp\Php\PathGenerator\Psr4PathGenerator;
-use Goetas\Xsd\XsdToPhp\AbstractConverter;
+use Goetas\Xsd\XsdToPhp\Php\PhpConverter;
 use Symfony\Component\Console\Output\OutputInterface;
 use Zend\Code\Generator\FileGenerator;
-use Goetas\Xsd\XsdToPhp\Naming\NamingStrategy;
 
 class ConvertToPHP extends AbstractConvert
 {
-
     /**
-     *
-     * @see Console\Command\Command
+     * @inheritdoc
      */
     protected function configure()
     {
@@ -23,40 +22,52 @@ class ConvertToPHP extends AbstractConvert
         $this->setDescription('Convert XSD definitions into PHP classes');
     }
 
-    protected function getConverterter(NamingStrategy $naming)
+    /**
+     * @inheritdoc
+     */
+    protected function getConverter(Configuration $configuration)
     {
-        return new PhpConverter($naming);
+        return new PhpConverter($configuration);
     }
 
-    protected function convert(AbstractConverter $converter, array $schemas, array $targets, OutputInterface $output)
+    /**
+     * @inheritdoc
+     */
+    protected function convert(Converter $converter, array $schemas, OutputInterface $output)
     {
-        $generator = new ClassGenerator();
-        $pathGenerator = new Psr4PathGenerator($targets);
-        $progress = $this->getHelperSet()->get('progress');
-
         $items = $converter->convert($schemas);
+
+        $this->generateFiles(
+            $items,
+            new Psr4PathGenerator($converter->getConfiguration()->getNamespaceDestinations()),
+            $output
+        );
+    }
+
+    /**
+     * @param OutputInterface $output
+     * @param ClassGenerator[] $items
+     * @param PathGenerator $pathGenerator
+     */
+    protected function generateFiles(array $items, PathGenerator $pathGenerator, OutputInterface $output)
+    {
+        /** @var \Symfony\Component\Console\Helper\ProgressHelper $progress */
+        $progress = $this->getHelperSet()->get('progress');
         $progress->start($output, count($items));
 
+        $output->writeln('Generating files:');
         foreach ($items as $item) {
             $progress->advance(1, true);
-            $output->write(" Creating <info>" . $output->getFormatter()->escape($item->getFullName()) . "</info>... ");
-            $path = $pathGenerator->getPath($item);
-
+            $output->write(" Creating <info>" . $output->getFormatter()->escape($item->getNamespaceName() . '\\' . $item->getName()) . "</info>... ");
+            $path = $pathGenerator->getPathByClassGenerator($item);
 
             $fileGen = new FileGenerator();
             $fileGen->setFilename($path);
-            $classGen = new \Zend\Code\Generator\ClassGenerator();
 
-            if ($generator->generate($classGen, $item)) {
+            $fileGen->setClass($item);
+            $fileGen->write();
 
-                $fileGen->setClass($classGen);
-
-                $fileGen->write();
-                $output->writeln("done.");
-            }else{
-                $output->write("skip.");
-
-            }
+            $output->writeln("done.");
         }
         $progress->finish();
     }

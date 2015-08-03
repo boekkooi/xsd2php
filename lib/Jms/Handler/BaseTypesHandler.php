@@ -9,7 +9,6 @@ use JMS\Serializer\XmlDeserializationVisitor;
 
 class BaseTypesHandler implements SubscribingHandlerInterface
 {
-
     public static function getSubscribingMethods()
     {
         return array(
@@ -30,14 +29,13 @@ class BaseTypesHandler implements SubscribingHandlerInterface
 
     public function simpleListOfToXml(XmlSerializationVisitor $visitor, $object, array $type, Context $context)
     {
-
         $newType = array(
             'name' => $type["params"][0]["name"],
             'params' => array()
         );
 
         $ret = array();
-        foreach ($object as $v){
+        foreach ($object as $v) {
             $ret[] = $context->accept($v, $newType)->data;
         }
 
@@ -51,10 +49,9 @@ class BaseTypesHandler implements SubscribingHandlerInterface
             'params' => array()
         );
         $ret = array();
-        foreach (explode(" ", (string)$node) as $v){
+        foreach (explode(" ", (string)$node) as $v) {
             $ret[] = $context->accept($v, $newType);
         }
         return $ret;
     }
 }
-

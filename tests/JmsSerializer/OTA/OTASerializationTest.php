@@ -15,7 +15,7 @@ use Goetas\Xsd\XsdToPhp\Jms\Handler\BaseTypesHandler;
 use Goetas\Xsd\XsdToPhp\Jms\Handler\XmlSchemaDateHandler;
 use Goetas\Xsd\XsdToPhp\Jms\Handler\OTA\SchemaDateHandler;
 use Composer\Autoload\ClassLoader;
-use Goetas\Xsd\XsdToPhp\Naming\ShortNamingStrategy;
+use Goetas\Xsd\XsdToPhp\Code\Naming\ShortNamingStrategy;
 
 class OTASerializationTest extends \PHPUnit_Framework_TestCase
 {

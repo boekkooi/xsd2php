@@ -1,10 +1,10 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Php\PathGenerator;
 
-use Goetas\Xsd\XsdToPhp\Php\Structure\PHPClass;
-use Goetas\Xsd\XsdToPhp\PathGenerator\PathGenerator as PathGeneratorBase;
+use Goetas\Xsd\XsdToPhp\Code\PathGenerator\PathGenerator as CodePathGenerator;
+use Zend\Code\Generator\ClassGenerator;
 
-interface PathGenerator extends PathGeneratorBase
+interface PathGenerator extends CodePathGenerator
 {
-    public function getPath(PHPClass $php);
+    public function getPathByClassGenerator(ClassGenerator $php);
 }

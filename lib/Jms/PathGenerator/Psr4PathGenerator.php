@@ -6,13 +6,11 @@ use Goetas\Xsd\XsdToPhp\PathGenerator\Psr4PathGenerator as Psr4PathGeneratorBase
 
 class Psr4PathGenerator extends Psr4PathGeneratorBase implements PathGenerator
 {
-
     public function getPath($yaml)
     {
         $ns = key($yaml);
 
         foreach ($this->namespaces as $namespace => $dir) {
-
             $pos = strpos($ns, $namespace);
 
             if ($pos === 0) {
@@ -26,4 +24,3 @@ class Psr4PathGenerator extends Psr4PathGeneratorBase implements PathGenerator
         throw new PathGeneratorException("Can't find a defined location where save '$ns' metadata");
     }
 }
-

@@ -1,13 +1,11 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Jms;
 
-use Exception;
 use Goetas\XML\XSDReader\Schema\Schema;
 use Goetas\XML\XSDReader\Schema\Type\Type;
 use Doctrine\Common\Inflector\Inflector;
 use Goetas\XML\XSDReader\Schema\Type\BaseComplexType;
 use Goetas\XML\XSDReader\Schema\Type\ComplexType;
-use Goetas\XML\XSDReader\Schema\Element\Element;
 use Goetas\XML\XSDReader\Schema\Item;
 use Goetas\XML\XSDReader\Schema\Type\SimpleType;
 use Goetas\XML\XSDReader\Schema\Attribute\AttributeItem;
@@ -15,33 +13,25 @@ use Goetas\XML\XSDReader\Schema\Element\ElementItem;
 use Goetas\XML\XSDReader\Schema\Attribute\AttributeContainer;
 use Goetas\XML\XSDReader\Schema\Element\ElementContainer;
 use Goetas\XML\XSDReader\Schema\Element\ElementDef;
-use Goetas\Xsd\XsdToPhp\AbstractConverter;
 use Goetas\XML\XSDReader\Schema\Element\ElementRef;
 use Goetas\XML\XSDReader\Schema\SchemaItem;
-use Goetas\Xsd\XsdToPhp\Naming\NamingStrategy;
+use Goetas\Xsd\XsdToPhp\Converter\Configuration;
+use Goetas\Xsd\XsdToPhp\Xsd\Converter;
+use Goetas\Xsd\XsdToPhp\Xsd\Helper;
 
-class YamlConverter extends AbstractConverter
+class YamlConverter extends Converter
 {
-
-    public function __construct(NamingStrategy $namingStrategy){
-
-        parent::__construct($namingStrategy);
-
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "dateTime", function (Type $type)
-        {
-            return "Goetas\Xsd\XsdToPhp\XMLSchema\DateTime";
-        });
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "time", function (Type $type)
-        {
-            return "Goetas\Xsd\XsdToPhp\XMLSchema\Time";
-        });
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "date", function (Type $type)
-        {
-            return "DateTime<'Y-m-d'>";
-        });
-    }
-
     private $classes = [];
+
+    public function __construct(Configuration $configuration)
+    {
+        parent::__construct($configuration);
+
+        // Yaml
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "dateTime", "Goetas\\Xsd\\XsdToPhp\\XMLSchema\\DateTime");
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "time", "Goetas\\Xsd\\XsdToPhp\\XMLSchema\\Time");
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "date", "DateTime<'Y-m-d'>");
+    }
 
     public function convert(array $schemas)
     {
@@ -81,12 +71,11 @@ class YamlConverter extends AbstractConverter
 
     /**
      *
-     * @return PHPClass[]
+     * @return \Goetas\Xsd\XsdToPhp\Php\Structure\PHPClass[]
      */
     public function getTypes()
     {
-        uasort($this->classes, function ($a, $b)
-        {
+        uasort($this->classes, function ($a, $b) {
             return strcmp(key($a), key($b));
         });
 
@@ -117,9 +106,11 @@ class YamlConverter extends AbstractConverter
         }
 
         foreach ($schema->getSchemas() as $schildSchema) {
-            if (! in_array($schildSchema->getTargetNamespace(), $this->baseSchemas, true)) {
-                $this->navigate($schildSchema, $visited);
+            if ($this->getConfiguration()->isExcludedNamespace($schildSchema->getTargetNamespace())) {
+                continue;
             }
+
+            $this->navigate($schildSchema, $visited);
         }
     }
 
@@ -139,7 +130,7 @@ class YamlConverter extends AbstractConverter
     private function &visitElementDef(Schema $schema, ElementDef $element)
     {
         if (! isset($this->classes[spl_object_hash($element)])) {
-            $className = $this->findPHPNamespace($element)."\\".$this->getNamingStrategy()->getItemName($element);
+            $className = $this->findPHPNamespace($element)."\\".$this->getNamingStrategy()->getItemName($element->getName());
             $class = array();
             $data = array();
             $ns = $className;
@@ -162,19 +153,12 @@ class YamlConverter extends AbstractConverter
 
     private function findPHPNamespace(SchemaItem $item)
     {
-        $schema = $item->getSchema();
-
-        if (! isset($this->namespaces[$schema->getTargetNamespace()])) {
-            throw new Exception(sprintf("Can't find a PHP namespace to '%s' namespace", $schema->getTargetNamespace()));
-        }
-        return $this->namespaces[$schema->getTargetNamespace()];
+        return $this->getConfiguration()->getNamespace($item->getSchema()->getTargetNamespace());
     }
-
 
     private function findPHPName(Type $type)
     {
         $schema = $type->getSchema();
-
         if ($alias = $this->getTypeAlias($type, $schema)) {
             return $alias;
         }
@@ -185,12 +169,9 @@ class YamlConverter extends AbstractConverter
         return $ns . "\\" . $name;
     }
 
-
     private function &visitType(Type $type, $force = false)
     {
-
         if (! isset($this->classes[spl_object_hash($type)])) {
-
             if ($alias = $this->getTypeAlias($type)) {
                 $class = array();
                 $class[$alias] = array();
@@ -211,17 +192,17 @@ class YamlConverter extends AbstractConverter
 
             $this->visitTypeBase($class, $data, $type, $type->getName());
 
-            if ($type instanceof SimpleType){
+            if ($type instanceof SimpleType) {
                 $this->classes[spl_object_hash($type)]["skip"] = true;
                 return $class;
             }
 
-            if (!$force && ($this->isArrayType($type) || $this->isArrayNestedElement($type))) {
+            if (!$force && (Helper::isArrayType($type) || Helper::isArrayNestedElement($type))) {
                 $this->classes[spl_object_hash($type)]["skip"] = true;
                 return $class;
             }
-        }elseif ($force) {
-            if (!($type instanceof SimpleType) && !$this->getTypeAlias($type)){
+        } elseif ($force) {
+            if (!($type instanceof SimpleType) && !$this->getTypeAlias($type)) {
                 $this->classes[spl_object_hash($type)]["skip"] = false;
             }
         }
@@ -233,7 +214,7 @@ class YamlConverter extends AbstractConverter
         $class = array();
         $data = array();
 
-        $name = $this->getNamingStrategy()->getAnonymousTypeName($type, $parentName);
+        $name = $this->getNamingStrategy()->getAnonymousTypeName($parentName);
 
         $class[key($parentClass) . "\\" . $name] = &$data;
 
@@ -241,7 +222,7 @@ class YamlConverter extends AbstractConverter
         if ($parentName) {
             $this->classes[spl_object_hash($type)]["class"] = &$class;
 
-            if ($type instanceof SimpleType){
+            if ($type instanceof SimpleType) {
                 $this->classes[spl_object_hash($type)]["skip"] = true;
             }
         }
@@ -296,8 +277,6 @@ class YamlConverter extends AbstractConverter
     private function handleClassExtension(&$class, &$data, Type $type, $parentName)
     {
         if ($alias = $this->getTypeAlias($type)) {
-
-
             $property = array();
             $property["expose"] = true;
             $property["xml_value"] = true;
@@ -307,15 +286,13 @@ class YamlConverter extends AbstractConverter
             $property["type"] = $alias;
 
             $data["properties"]["__value"] = $property;
-
-
-        }else{
+        } else {
             $extension = $this->visitType($type, true);
 
             if (isset($extension['properties']['__value']) && count($extension['properties']) === 1) {
                 $data["properties"]["__value"] = $extension['properties']['__value'];
             } else {
-                if($type instanceof SimpleType){ // @todo ?? basta come controllo?
+                if ($type instanceof SimpleType) { // @todo ?? basta come controllo?
                     $property = array();
                     $property["expose"] = true;
                     $property["xml_value"] = true;
@@ -330,7 +307,6 @@ class YamlConverter extends AbstractConverter
                     }
 
                     $data["properties"]["__value"] = $property;
-
                 }
             }
         }
@@ -348,11 +324,9 @@ class YamlConverter extends AbstractConverter
 
         $property["xml_attribute"] = true;
 
-        if ($alias = $this->getTypeAlias($attribute))  {
+        if ($alias = $this->getTypeAlias($attribute)) {
             $property["type"] = $alias;
-
-        }elseif ($itemOfArray = $this->isArrayType($attribute->getType())) {
-
+        } elseif ($itemOfArray = Helper::getArrayType($attribute->getType())) {
             if ($valueProp = $this->typeHasValue($itemOfArray, $class, 'xx')) {
                 $property["type"] = "Goetas\Xsd\XsdToPhp\Jms\SimpleListOf<" . $valueProp . ">";
             } else {
@@ -372,12 +346,11 @@ class YamlConverter extends AbstractConverter
 
     private function typeHasValue(Type $type, $parentClass, $name)
     {
-    	$collected = array();
+        $collected = array();
         do {
             if ($alias = $this->getTypeAlias($type)) {
                 return $alias;
             } else {
-
                 if ($type->getName()) {
                     $parentClass = $this->visitType($type);
                 } else {
@@ -395,11 +368,11 @@ class YamlConverter extends AbstractConverter
 
     /**
      *
-     * @param PHPClass $class
+     * @param \Goetas\Xsd\XsdToPhp\PHP\Structure\PHPClass $class
      * @param Schema $schema
-     * @param Element $element
+     * @param ElementItem $element
      * @param boolean $arrayize
-     * @return \Goetas\Xsd\XsdToPhp\Structure\PHPProperty
+     * @return \Goetas\Xsd\XsdToPhp\PHP\Structure\PHPProperty
      */
     private function visitElement(&$class, Schema $schema, ElementItem $element, $arrayize = true)
     {
@@ -416,12 +389,11 @@ class YamlConverter extends AbstractConverter
         $property["accessor"]["setter"] = "set" . Inflector::classify($element->getName());
         $t = $element->getType();
 
-        if ($arrayize){
-
-            if($itemOfArray = $this->isArrayNestedElement($t)) {
-                if(!$t->getName()){
+        if ($arrayize) {
+            if ($itemOfArray = Helper::getArrayNestedElement($t)) {
+                if (!$t->getName()) {
                     $classType = $this->visitTypeAnonymous($t, $element->getName(), $class);
-                }else{
+                } else {
                     $classType = $this->visitType($t);
                 }
 
@@ -434,17 +406,16 @@ class YamlConverter extends AbstractConverter
                     $property["xml_list"]["namespace"] = $schema->getTargetNamespace();
                 }
                 return $property;
-            } elseif ($itemOfArray = $this->isArrayType($t)) {
-
-                if(!$t->getName()){
+            } elseif ($itemOfArray = Helper::getArrayType($t)) {
+                if (!$t->getName()) {
                     $visitedType = $this->visitTypeAnonymous($itemOfArray, $element->getName(), $class);
 
-                    if($prop = $this->typeHasValue($itemOfArray, $class, 'xx')){
+                    if ($prop = $this->typeHasValue($itemOfArray, $class, 'xx')) {
                         $property["type"] = "array<" .$prop . ">";
-                    }else{
+                    } else {
                         $property["type"] = "array<" . key($visitedType) . ">";
                     }
-                }else{
+                } else {
                     $this->visitType($itemOfArray);
                     $property["type"] = "array<" . $this->findPHPName($itemOfArray) . ">";
                 }
@@ -455,7 +426,7 @@ class YamlConverter extends AbstractConverter
                     $property["xml_list"]["namespace"] = $schema->getTargetNamespace();
                 }
                 return $property;
-            } elseif ($this->isArrayElement($element)) {
+            } elseif (Helper::isArrayElement($element)) {
                 $property["xml_list"]["inline"] = true;
                 $property["xml_list"]["entry_name"] = $element->getName();
                 if ($schema->getTargetNamespace()) {
@@ -482,7 +453,7 @@ class YamlConverter extends AbstractConverter
             $elementRef = $this->visitElementDef($node->getSchema(), $node->getReferencedElement());
             return key($elementRef);
         }
-        if($valueProp = $this->typeHasValue($type, $class, '')){
+        if ($valueProp = $this->typeHasValue($type, $class, '')) {
             return $valueProp;
         }
         if (! $node->getType()->getName()) {

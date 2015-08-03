@@ -5,7 +5,7 @@ use Goetas\Xsd\XsdToPhp\Jms\YamlConverter;
 use Goetas\Xsd\XsdToPhp\Php\PhpConverter;
 use Goetas\Xsd\XsdToPhp\Php\Structure\PHPClass;
 use Goetas\Xsd\XsdToPhp\Php\Structure\PHPProperty;
-use Goetas\Xsd\XsdToPhp\Naming\ShortNamingStrategy;
+use Goetas\Xsd\XsdToPhp\Code\Naming\ShortNamingStrategy;
 
 class I43Test extends \PHPUnit_Framework_TestCase{
     /**

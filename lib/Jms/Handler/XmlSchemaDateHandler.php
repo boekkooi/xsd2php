@@ -10,7 +10,6 @@ use JMS\Serializer\Context;
 
 class XmlSchemaDateHandler implements SubscribingHandlerInterface
 {
-
     protected $defaultTimezone;
 
     public static function getSubscribingMethods()
@@ -46,12 +45,10 @@ class XmlSchemaDateHandler implements SubscribingHandlerInterface
     public function __construct($defaultTimezone = 'UTC')
     {
         $this->defaultTimezone = new \DateTimeZone($defaultTimezone);
-
     }
 
     public function serializeDateTime(XmlSerializationVisitor $visitor, \DateTime $date, array $type, Context $context)
     {
-
         $v = $date->format(\DateTime::W3C);
         if (substr($v, - 5) == "00:00") {
             $v = substr($v, 0, - 6);
@@ -67,13 +64,12 @@ class XmlSchemaDateHandler implements SubscribingHandlerInterface
         }
 
         return $this->parseDateTime($data, $type);
-
     }
 
     public function serializeTime(XmlSerializationVisitor $visitor, \DateTime $date, array $type, Context $context)
     {
         $v = $date->format('H:i:s');
-        if ($date->getTimezone()->getOffset($date)!==$this->defaultTimezone->getOffset($date)){
+        if ($date->getTimezone()->getOffset($date)!==$this->defaultTimezone->getOffset($date)) {
             $v.= $date->format('P');
         }
         return $visitor->visitSimpleString($v, $type, $context);
@@ -88,7 +84,7 @@ class XmlSchemaDateHandler implements SubscribingHandlerInterface
 
         $data = (string) $data;
 
-        return new \DateTime( $data, $this->defaultTimezone );
+        return new \DateTime($data, $this->defaultTimezone);
     }
 
     private function parseDateTime($data, array $type)
@@ -102,4 +98,3 @@ class XmlSchemaDateHandler implements SubscribingHandlerInterface
         return $datetime;
     }
 }
-

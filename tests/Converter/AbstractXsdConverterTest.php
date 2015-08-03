@@ -1,7 +1,7 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Tests\Converter;
 
-use Goetas\Xsd\XsdToPhp\Naming\ShortNamingStrategy;
+use Goetas\Xsd\XsdToPhp\Code\Naming\ShortNamingStrategy;
 class AbstractXsdConverterTest extends \PHPUnit_Framework_TestCase
 {
 

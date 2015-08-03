@@ -18,8 +18,8 @@
     "license":"LGPL",
     "require":{
         "php":"~5.4",
-        "symfony/console":"~2.1",
-        "symfony/yaml":"~2.1",
+        "symfony/console":"~2.3",
+        "symfony/yaml":"~2.3",
         "goetas/xsd-reader":"~2.0@dev",
         "doctrine/inflector":"~1.0",
         "zendframework/zend-code":"~2.2"
@@ -41,7 +41,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Goetas\\Xsd\\XsdToPhp\\Tests\\":"tests/"
+            "Tests\\Goetas\\Xsd\\XsdToPhp\\":"tests/"
         }
     },
     "extra":{

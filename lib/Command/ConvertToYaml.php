@@ -1,19 +1,17 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Command;
 
+use Goetas\Xsd\XsdToPhp\Converter\Configuration;
+use Goetas\Xsd\XsdToPhp\Converter\Converter;
 use Goetas\Xsd\XsdToPhp\Jms\PathGenerator\Psr4PathGenerator;
 use Goetas\Xsd\XsdToPhp\Jms\YamlConverter;
 use Symfony\Component\Yaml\Dumper;
 use Symfony\Component\Console\Output\OutputInterface;
-use Goetas\Xsd\XsdToPhp\AbstractConverter;
-use Goetas\Xsd\XsdToPhp\Naming\NamingStrategy;
 
 class ConvertToYaml extends AbstractConvert
 {
-
     /**
-     *
-     * @see Console\Command\Command
+     * @inheritdoc
      */
     protected function configure()
     {
@@ -22,20 +20,26 @@ class ConvertToYaml extends AbstractConvert
         $this->setDescription('Convert XSD definitions into YAML metadata for JMS Serializer');
     }
 
-    protected function getConverterter(NamingStrategy $naming)
+    /**
+     * @inheritdoc
+     */
+    protected function getConverter(Configuration $configuration)
     {
-        return new YamlConverter($naming);
+        return new YamlConverter($configuration);
     }
 
-    protected function convert(AbstractConverter $converter, array $schemas, array $targets, OutputInterface $output)
+    /**
+     * @inheritdoc
+     */
+    protected function convert(Converter $converter, array $schemas, OutputInterface $output)
     {
         $items = $converter->convert($schemas);
 
         $dumper = new Dumper();
+        $pathGenerator = new Psr4PathGenerator($converter->getConfiguration()->getNamespaceDestinations());
 
-        $pathGenerator = new Psr4PathGenerator($targets);
+        /** @var \Symfony\Component\Console\Helper\ProgressHelper $progress */
         $progress = $this->getHelperSet()->get('progress');
-
         $progress->start($output, count($items));
 
         foreach ($items as $item) {

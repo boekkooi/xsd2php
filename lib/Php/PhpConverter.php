@@ -1,12 +1,13 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Php;
 
-use Exception;
-use Doctrine\Common\Inflector\Inflector;
-use Goetas\Xsd\XsdToPhp\Php\Structure\PHPClassOf;
-use Goetas\Xsd\XsdToPhp\Php\Structure\PHPArg;
-use Goetas\Xsd\XsdToPhp\Php\Structure\PHPClass;
-use Goetas\Xsd\XsdToPhp\Php\Structure\PHPProperty;
+use Goetas\Xsd\XsdToPhp\Code\Generator\ClassGenerator;
+use Goetas\Xsd\XsdToPhp\Code\Generator\ElementClassGenerator;
+use Goetas\Xsd\XsdToPhp\Code\Generator\Property\AttributePropertyGenerator;
+use Goetas\Xsd\XsdToPhp\Code\Generator\Property\ElementPropertyGenerator;
+use Goetas\Xsd\XsdToPhp\Code\Generator\SimpleTypeClassGenerator;
+use Goetas\Xsd\XsdToPhp\Code\Generator\TypeClassGenerator;
+use Goetas\Xsd\XsdToPhp\Converter\Configuration;
 use Goetas\XML\XSDReader\Schema\Schema;
 use Goetas\XML\XSDReader\Schema\Type\Type;
 use Goetas\XML\XSDReader\Schema\Type\BaseComplexType;
@@ -19,92 +20,89 @@ use Goetas\XML\XSDReader\Schema\Type\SimpleType;
 use Goetas\XML\XSDReader\Schema\Attribute\AttributeItem;
 use Goetas\XML\XSDReader\Schema\Element\ElementRef;
 use Goetas\XML\XSDReader\Schema\Element\ElementDef;
-use Goetas\XML\XSDReader\Schema\Element\ElementSingle;
-use Goetas\Xsd\XsdToPhp\AbstractConverter;
-use Goetas\Xsd\XsdToPhp\Naming\NamingStrategy;
+use Goetas\Xsd\XsdToPhp\Xsd\Converter;
+use Goetas\Xsd\XsdToPhp\Xsd\Helper;
 
-class PhpConverter extends AbstractConverter
+class PhpConverter extends Converter
 {
-
-    public function __construct(NamingStrategy $namingStrategy){
-        parent::__construct($namingStrategy);
-
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "dateTime", function (Type $type)
-        {
-            return "DateTime";
-        });
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "time", function (Type $type)
-        {
-            return "DateTime";
-        });
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "date", function (Type $type)
-        {
-            return "DateTime";
-        });
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "anySimpleType", function (Type $type)
-        {
-            return "mixed";
-        });
-        $this->addAliasMap("http://www.w3.org/2001/XMLSchema", "anyType", function (Type $type)
-        {
-            return "mixed";
-        });
-    }
-
+    /**
+     * @var ClassGenerator[]
+     */
     private $classes = [];
+
+    public function __construct(Configuration $configuration)
+    {
+        parent::__construct($configuration);
+
+        // XMLSchema PHP types
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "dateTime", 'DateTime');
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "time", 'DateTime');
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "date", 'DateTime');
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "anySimpleType", 'mixed');
+        $configuration->addTypeAlias("http://www.w3.org/2001/XMLSchema", "anyType", 'mixed');
+    }
 
     public function convert(array $schemas)
     {
         $visited = array();
         $this->classes = array();
+
         foreach ($schemas as $schema) {
             $this->navigate($schema, $visited);
         }
-        return $this->getTypes();
+
+        return $this->getClasses();
     }
 
     /**
+     * Retrieve all generated classes.
      *
-     * @return PHPClass[]
+     * @return ClassGenerator[]
      */
-    private function getTypes()
+    private function getClasses()
     {
-        uasort($this->classes, function ($a, $b)
-        {
-            return strcmp($a["class"]->getFullName(), $b["class"]->getFullName());
-        });
-        $ret = array();
-        foreach ($this->classes as $classData) {
-            if (! isset($classData["skip"]) || ! $classData["skip"]) {
-                $ret[$classData["class"]->getFullName()] = $classData["class"];
+        $classes = [];
+        foreach($this->classes as $class) {
+            if ($class->skip()) {
+                continue;
             }
+            $classes[$class->getFQCN()] = $class->resolve();
         }
+        ksort($classes);
 
-        return $ret;
+        return $classes;
     }
 
     private function navigate(Schema $schema, array &$visited)
     {
-        if (isset($visited[spl_object_hash($schema)])) {
+        $schemaHash = spl_object_hash($schema);
+        if (isset($visited[$schemaHash])) {
             return;
         }
-        $visited[spl_object_hash($schema)] = true;
+        $visited[$schemaHash] = true;
 
+        // Visit the types
         foreach ($schema->getTypes() as $type) {
             $this->visitType($type);
         }
+
+        // Visit the elements
         foreach ($schema->getElements() as $element) {
             $this->visitElementDef($element);
         }
 
-        foreach ($schema->getSchemas() as $schildSchema) {
-            if (! in_array($schildSchema->getTargetNamespace(), $this->baseSchemas, true)) {
-                $this->navigate($schildSchema, $visited);
+        // Visit imported schema's
+        /** @var Schema $childSchema */
+        foreach ($schema->getSchemas() as $childSchema) {
+            if ($this->getConfiguration()->isExcludedNamespace($childSchema->getTargetNamespace())) {
+                continue;
             }
+
+            $this->navigate($childSchema, $visited);
         }
     }
 
-    private function visitTypeBase(PHPClass $class, Type $type)
+    private function visitTypeBase(ClassGenerator $class, Type $type)
     {
         $class->setAbstract($type->isAbstract());
 
@@ -119,156 +117,118 @@ class PhpConverter extends AbstractConverter
         }
     }
 
-    private function visitGroup(PHPClass $class, Schema $schema, Group $group)
+    private function visitGroup(ClassGenerator $class, Schema $schema, Group $group)
     {
         foreach ($group->getElements() as $childGroup) {
             if ($childGroup instanceof Group) {
                 $this->visitGroup($class, $schema, $childGroup);
             } else {
                 $property = $this->visitElement($class, $schema, $childGroup);
-                $class->addProperty($property);
+                $class->addPropertyFromGenerator($property);
             }
         }
     }
 
-    private function visitAttributeGroup(PHPClass $class, Schema $schema, AttributeGroup $att)
+    private function visitAttributeGroup(ClassGenerator $class, Schema $schema, AttributeGroup $att)
     {
         foreach ($att->getAttributes() as $childAttr) {
             if ($childAttr instanceof AttributeGroup) {
                 $this->visitAttributeGroup($class, $schema, $childAttr);
             } else {
-                $property = $this->visitAttribute($class, $schema, $childAttr);
-                $class->addProperty($property);
+                $property = $this->visitAttribute($class, $childAttr);
+                $class->addPropertyFromGenerator($property);
             }
         }
     }
 
     private function visitElementDef(ElementDef $element)
     {
-        if (! isset($this->classes[spl_object_hash($element)])) {
-            $schema = $element->getSchema();
-
-            $class = new PHPClass();
-            $class->setDoc($element->getDoc());
-            $class->setName($this->getNamingStrategy()->getItemName($element));
-            $class->setDoc($element->getDoc());
-
-            if (! isset($this->namespaces[$schema->getTargetNamespace()])) {
-                throw new Exception(sprintf("Can't find a PHP namespace to '%s' namespace", $schema->getTargetNamespace()));
-            }
-            $class->setNamespace($this->namespaces[$schema->getTargetNamespace()]);
-
-            $this->classes[spl_object_hash($element)]["class"] = $class;
-
-            if (! $element->getType()->getName()) {
-                $this->visitTypeBase($class, $element->getType());
-            } else {
-                $this->handleClassExtension($class, $element->getType());
-            }
-        }
-        return $this->classes[spl_object_hash($element)]["class"];
-    }
-
-    private function findPHPName(Type $type)
-    {
-        $schema = $type->getSchema();
-
-        if ($className = $this->getTypeAlias($type)) {
-
-            if (($pos = strrpos($className, '\\')) !== false) {
-                return [
-                    substr($className, $pos + 1),
-                    substr($className, 0, $pos)
-                ];
-            } else {
-                return [
-                    $className,
-                    null
-                ];
-            }
+        $elementHash = spl_object_hash($element);
+        if (isset($this->classes[$elementHash])) {
+            return $this->classes[$elementHash];
         }
 
-        $name = $this->getNamingStrategy()->getTypeName($type);
+        $this->classes[$elementHash] = $class = ElementClassGenerator::create($this->getConfiguration(), $element);
 
-        if (! isset($this->namespaces[$schema->getTargetNamespace()])) {
-            throw new Exception(sprintf("Can't find a PHP namespace to '%s' namespace", $schema->getTargetNamespace()));
+        if (!$element->getType()->getName()) {
+            $this->visitTypeBase($class, $element->getType());
+        } else {
+            $this->handleClassExtension($class, $element->getType());
         }
-        $ns = $this->namespaces[$schema->getTargetNamespace()];
-        return [
-            $name,
-            $ns
-        ];
+
+        return $class;
     }
 
     /**
      *
      * @param Type $type
      * @param boolean $force
-     * @return \Goetas\Xsd\XsdToPhp\Php\Structure\PHPClass
+     * @return ClassGenerator
      */
     private function visitType(Type $type, $force = false)
     {
-        if (! isset($this->classes[spl_object_hash($type)])) {
+        $cfg = $this->getConfiguration();
 
-            $this->classes[spl_object_hash($type)]["class"] = $class = new PHPClass();
+        $typeHash = spl_object_hash($type);
 
-            if ($alias = $this->getTypeAlias($type)) {
-                $class->setName($alias);
-                $this->classes[spl_object_hash($type)]["skip"] = true;
-                return $class;
+        // Don't build a type class twice
+        if (isset($this->classes[$typeHash])) {
+            $class = $this->classes[$typeHash];
+
+            if (
+                $force &&
+                !($type instanceof SimpleType) &&
+                (!$class instanceof TypeClassGenerator || !$class->hasAlias())
+            ) {
+                $class->removeFlag(ClassGenerator::FLAG_SKIP);
             }
 
-            list ($name, $ns) = $this->findPHPName($type);
-            $class->setName($name);
-            $class->setNamespace($ns);
-
-            $class->setDoc($type->getDoc() . PHP_EOL . "XSD Type: " . ($type->getName() ?  : 'anonymous'));
-
-            $this->visitTypeBase($class, $type);
-
-            if ($type instanceof SimpleType){
-                $this->classes[spl_object_hash($type)]["skip"] = true;
-                return $class;
-            }
-            if (($this->isArrayType($type) || $this->isArrayNestedElement($type)) && !$force) {
-                $this->classes[spl_object_hash($type)]["skip"] = true;
-                return $class;
-            }
-
-            $this->classes[spl_object_hash($type)]["skip"] = !!$this->getTypeAlias($type);
-        }elseif ($force) {
-            if (!($type instanceof SimpleType) && !$this->getTypeAlias($type)){
-                $this->classes[spl_object_hash($type)]["skip"] = false;
-            }
+            return $class;
         }
-        return $this->classes[spl_object_hash($type)]["class"];
+
+        $this->classes[$typeHash] = $class = TypeClassGenerator::create($cfg, $type, $force);
+
+        // Skip the class if it has a alias
+        if ($class->hasAlias()) {
+            return $class;
+        }
+
+        $this->visitTypeBase($class, $type);
+
+        return $class;
     }
 
     /**
      * @param Type $type
      * @param string $name
-     * @param PHPClass $parentClass
-     * @return \Goetas\Xsd\XsdToPhp\Php\Structure\PHPClass
+     * @param ClassGenerator $parentClass
+     * @return ClassGenerator
      */
-    private function visitTypeAnonymous(Type $type, $name, PHPClass $parentClass)
+    private function visitTypeAnonymous(Type $type, $name, ClassGenerator $parentClass)
     {
-        if (! isset($this->classes[spl_object_hash($type)])) {
-            $this->classes[spl_object_hash($type)]["class"] = $class = new PHPClass();
-            $class->setName($this->getNamingStrategy()->getAnonymousTypeName($type, $name));
-
-            $class->setNamespace($parentClass->getNamespace() . "\\" . $parentClass->getName());
-            $class->setDoc($type->getDoc());
-
-            $this->visitTypeBase($class, $type);
-
-            if ($type instanceof SimpleType){
-                $this->classes[spl_object_hash($type)]["skip"] = true;
-            }
+        $typeHash = spl_object_hash($type);
+        if (isset($this->classes[$typeHash])) {
+            return $this->classes[$typeHash];
         }
-        return $this->classes[spl_object_hash($type)]["class"];
+
+        $this->classes[$typeHash] = $class = new ClassGenerator(
+            $this->getNamingStrategy()->getAnonymousTypeName($name),
+            $parentClass->getFQCN()
+        );
+
+        if ($type instanceof SimpleType) {
+            $class->addFlag(ClassGenerator::FLAG_SKIP);
+        }
+
+        $class->getDocBlock()
+            ->setLongDescription($type->getDoc());
+
+        $this->visitTypeBase($class, $type);
+
+        return $class;
     }
 
-    private function visitComplexType(PHPClass $class, ComplexType $type)
+    private function visitComplexType(ClassGenerator $class, ComplexType $type)
     {
         $schema = $type->getSchema();
         foreach ($type->getElements() as $element) {
@@ -276,12 +236,12 @@ class PhpConverter extends AbstractConverter
                 $this->visitGroup($class, $schema, $element);
             } else {
                 $property = $this->visitElement($class, $schema, $element);
-                $class->addProperty($property);
+                $class->addPropertyFromGenerator($property);
             }
         }
     }
 
-    private function visitSimpleType(PHPClass $class, SimpleType $type)
+    private function visitSimpleType(ClassGenerator $class, SimpleType $type)
     {
         if ($restriction = $type->getRestriction()) {
             $parent = $restriction->getBase();
@@ -290,44 +250,65 @@ class PhpConverter extends AbstractConverter
                 $this->handleClassExtension($class, $parent);
             }
 
+            // TODO:
             foreach ($restriction->getChecks() as $typeCheck => $checks) {
                 foreach ($checks as $check) {
-                    $class->addCheck('__value', $typeCheck, $check);
+                    var_dump($typeCheck , $check);
+//                    $class->addCheck('__value', $typeCheck, $check);
                 }
             }
-        } elseif ($unions = $type->getUnions()) {
+        }
+
+        if ($unions = $type->getUnions()) {
+            /** @var ClassGenerator[] $types */
             $types = array();
-            foreach ($unions as $i => $unon) {
-                if (! $unon->getName()) {
-                    $types[] = $this->visitTypeAnonymous($unon, $type->getName() . $i, $class);
+            foreach ($unions as $i => $union) {
+                if (! $union->getName()) {
+                    $types[] = $this->visitTypeAnonymous($union, $type->getName() . $i, $class);
                 } else {
-                    $types[] = $this->visitType($unon);
+                    $types[] = $this->visitType($union);
                 }
             }
 
-            if ($candidato = reset($types)) {
-                $class->setExtends($candidato);
+            if ($candidate = reset($types)) {
+                $class->setExtendsClassGenerator($candidate);
             }
         }
     }
 
-    private function handleClassExtension(PHPClass $class, Type $type)
+    private function handleClassExtension(ClassGenerator $childClass, Type $type)
     {
+        $cfg = $this->getConfiguration();
 
-        if ($alias = $this->getTypeAlias($type)) {
-            $c = PHPClass::createFromFQCN($alias);
-            $val = new PHPProperty('__value');
-            $val->setType($c);
-            $c->addProperty($val);
-            $class->setExtends($c);
-        } else {
+        // Check that the type is not a alias
+        if (!$cfg->hasTypeAlias($type->getSchema()->getTargetNamespace(), $type->getName())) {
+            // Fetch/Generate the extending type
             $extension = $this->visitType($type, true);
-            $class->setExtends($extension);
+
+            // Mark is as the parent of the class
+            $childClass->setExtendsClassGenerator($extension);
+            return;
         }
+
+        // The parent class is a alias generate it
+        // TODO fix the following:
+        list($name, $namespace) = $cfg->resolvePHPTypeName(
+            $type->getSchema()->getTargetNamespace(),
+            $type->getName()
+        );
+
+        if (isset($this->classes[spl_object_hash($type)])) {
+            $class = $this->classes[spl_object_hash($type)];
+        } else {
+            $this->classes[spl_object_hash($type)] = $class = new SimpleTypeClassGenerator($name, $namespace);
+            $class->setFlags(ClassGenerator::FLAG_SKIP);
+        }
+        $childClass->setExtendsClassGenerator($class);
     }
 
-    private function visitBaseComplexType(PHPClass $class, BaseComplexType $type)
+    private function visitBaseComplexType(ClassGenerator $class, BaseComplexType $type)
     {
+        // Handle inheritance
         $parent = $type->getParent();
         if ($parent) {
             $parentType = $parent->getBase();
@@ -335,100 +316,95 @@ class PhpConverter extends AbstractConverter
                 $this->handleClassExtension($class, $parentType);
             }
         }
-        $schema = $type->getSchema();
 
+        $schema = $type->getSchema();
         foreach ($type->getAttributes() as $attr) {
             if ($attr instanceof AttributeGroup) {
                 $this->visitAttributeGroup($class, $schema, $attr);
             } else {
-                $property = $this->visitAttribute($class, $schema, $attr);
-                $class->addProperty($property);
+                $property = $this->visitAttribute($class, $attr);
+                $class->addPropertyFromGenerator($property);
             }
         }
     }
 
-    private function visitAttribute(PHPClass $class, Schema $schema, AttributeItem $attribute, $arrayize = true)
+    /**
+     * @param ClassGenerator $class
+     * @param AttributeItem $attribute
+     * @param bool|true $arrayize
+     * @return AttributePropertyGenerator
+     */
+    private function visitAttribute(ClassGenerator $class, AttributeItem $attribute, $arrayize = true)
     {
-        $property = new PHPProperty();
-        $property->setName(Inflector::camelize($attribute->getName()));
-
-        if ($arrayize && $itemOfArray = $this->isArrayType($attribute->getType())) {
+        /** @var \Goetas\XML\XSDReader\Schema\Item|AttributeItem $attribute */
+        if ($arrayize && $itemOfArray = Helper::getArrayType($attribute->getType())) {
             if ($attribute->getType()->getName()) {
-                $arg = new PHPArg(Inflector::camelize($attribute->getName()));
-                $arg->setType($this->visitType($itemOfArray));
-                $property->setType(new PHPClassOf($arg));
+                $type = $this->visitType($itemOfArray);
             } else {
-                $property->setType($this->visitTypeAnonymous($attribute->getType(), $attribute->getName(), $class));
+                $type = $this->visitTypeAnonymous($attribute->getType(), $attribute->getName(), $class);
             }
         } else {
-            $property->setType($this->findPHPClass($class, $attribute, true));
+            $type = $this->findPHPClass($class, $attribute, true);
         }
 
-        $property->setDoc($attribute->getDoc());
-        return $property;
+        return new AttributePropertyGenerator($attribute, $type->getFQCN());
     }
 
     /**
      *
-     * @param PHPClass $class
+     * @param ClassGenerator $class
      * @param Schema $schema
      * @param Element $element
-     * @param boolean $arrayize
-     * @return \Goetas\Xsd\XsdToPhp\Structure\PHPProperty
+     * @param boolean $array
+     * @return ElementPropertyGenerator
      */
-    private function visitElement(PHPClass $class, Schema $schema, ElementSingle $element, $arrayize = true)
+    private function visitElement(ClassGenerator $class, Schema $schema, Element $element, $array = true)
     {
-        $property = new PHPProperty();
-        $property->setName(Inflector::camelize($element->getName()));
-        $property->setDoc($element->getDoc());
-
-        $t = $element->getType();
-
-        if ($arrayize) {
-            if ($itemOfArray = $this->isArrayType($t)) {
-                if(!$itemOfArray->getName()){
+        $typeHint = null;
+        $property = null;
+        if ($array) {
+            $type = $element->getType();
+            if ($itemOfArray = Helper::getArrayType($type)) {
+                if (!$itemOfArray->getName()) {
                     $classType = $this->visitTypeAnonymous($itemOfArray, $element->getName(), $class);
-                }else{
+                } else {
                     $classType = $this->visitType($itemOfArray);
                 }
-
-                $arg = new PHPArg(Inflector::camelize($element->getName()));
-                $arg->setType($classType);
-                $property->setType(new PHPClassOf($arg));
-                return $property;
-            }elseif ($itemOfArray = $this->isArrayNestedElement($t)) {
-                if(!$t->getName()){
-                    $classType = $this->visitTypeAnonymous($t, $element->getName(), $class);
-                }else{
-                    $classType = $this->visitType($t);
+                $typeHint = sprintf('%s[]', $classType->getFQCN());
+            } elseif ($itemOfArray = Helper::getArrayNestedElement($type)) {
+                if (!$type->getName()) {
+                    $classType = $this->visitTypeAnonymous($type, $element->getName(), $class);
+                } else {
+                    $classType = $this->visitType($type);
                 }
-                $elementProp = $this->visitElement($classType, $schema, $itemOfArray, false);
-                $property->setType(new PHPClassOf($elementProp));
-                return $property;
-            } elseif ($this->isArrayElement($element)) {
-                $arg = new PHPArg(Inflector::camelize($element->getName()));
-                $arg->setType($this->findPHPClass($class, $element));
-                $arg->setDefault('array()');
-                $property->setType(new PHPClassOf($arg));
-                return $property;
+
+                $property = $this->visitElement($classType, $schema, $itemOfArray, false);
+                $typeHint = $property->getType().'[]';
+            } elseif (Helper::isArrayElement($element)) {
+                $classType = $this->findPHPClass($class, $element);
+
+                $typeHint = sprintf('%s[]', $classType->getFQCN());
             }
         }
 
-        $property->setType($this->findPHPClass($class, $element, true));
-        return $property;
+        if ($typeHint === null) {
+            /** @var \Goetas\Xsd\XsdToPhp\Code\Generator\TypeClassGenerator $type */
+            $type = $this->findPHPClass($class, $element, true);
+            $typeHint = $type->getFQCN();
+        }
+
+        return new ElementPropertyGenerator($element, $typeHint);
     }
 
-    private function findPHPClass(PHPClass $class, Item $node, $force = false)
+    private function findPHPClass(ClassGenerator $class, Item $node, $force = false)
     {
-
         if ($node instanceof ElementRef) {
             return $this->visitElementDef($node->getReferencedElement());
         }
 
-        if (! $node->getType()->getName()) {
+        if (!$node->getType()->getName()) {
             return $this->visitTypeAnonymous($node->getType(), $node->getName(), $class);
-        } else {
-            return $this->visitType($node->getType(), $force);
         }
+        return $this->visitType($node->getType(), $force);
     }
 }

@@ -3,7 +3,7 @@ namespace Goetas\Xsd\XsdToPhp\Tests\Issues\I63;
 use Goetas\XML\XSDReader\SchemaReader;
 use Goetas\Xsd\XsdToPhp\Jms\YamlConverter;
 use Goetas\Xsd\XsdToPhp\Php\PhpConverter;
-use Goetas\Xsd\XsdToPhp\Naming\ShortNamingStrategy;
+use Goetas\Xsd\XsdToPhp\Code\Naming\ShortNamingStrategy;
 
 class I63Test extends \PHPUnit_Framework_TestCase{
 
