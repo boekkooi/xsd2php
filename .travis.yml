@@ -4,15 +4,31 @@ php:
   - 5.4
   - 5.5
   - 5.6
+  - 7.0
+  - hhvm
+
+matrix:
+  include:
+  - { php: 5.4, env: "SYMFONY_VERSION=2.3.*" }
+  - { php: 5.5, env: "SYMFONY_VERSION=2.5.*" }
+  - { php: 5.6, env: "SYMFONY_VERSION=2.6.*" }
+  - { php: 5.6, env: "SYMFONY_VERSION=2.7.*" }
+  - { php: 5.4, env: "COMPOSER_FLAGS='--prefer-stable --prefer-lowest' PHPUNIT_COVERAGE='--coverage-text --coverage-clover=coverage.clover'"}
+  allow_failures:
+  - { php: hhvm }
+  - { php: 7.0 }
 
 before_script:
   - pecl install xmldiff
   - echo "xdebug.max_nesting_level=1000" >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
+  # Update composer and deps
+  - sh -c 'if [ "${SYMFONY_VERSION}" != "" ]; then composer require --no-update symfony/symfony=${SYMFONY_VERSION}; fi;'
   - composer install --prefer-dist --dev
 
-script: vendor/phpunit/phpunit/phpunit --coverage-clover=coverage.clover
+script:
+  - vendor/bin/phpunit ${PHPUNIT_COVERAGE}
 
 after_script:
-  - wget https://scrutinizer-ci.com/ocular.phar
-  - php ocular.phar code-coverage:upload --format=php-clover coverage.clover
+  - if [[ "${PHPUNIT_COVERAGE}" != "" ]]; then wget https://scrutinizer-ci.com/ocular.phar; fi
+  - if [[ "${PHPUNIT_COVERAGE}" != "" ]]; then php ocular.phar code-coverage:upload --format=php-clover coverage.clover; fi
   
