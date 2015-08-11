@@ -25,7 +25,7 @@ abstract class PropertyGenerator extends ZendPropertyGenerator
      */
     private $typeTag;
 
-    public function __construct($name = null, $type = null, $flags = self::FLAG_PRIVATE)
+    public function __construct($name = null, $type = null, $flags = self::FLAG_PROTECTED)
     {
         parent::__construct($name, null, $flags);
 
@@ -76,7 +76,7 @@ abstract class PropertyGenerator extends ZendPropertyGenerator
         $method = new MethodGenerator(
             sprintf('set%s', Inflector::classify($name)),
             [ new ParameterGenerator(
-                $this->getName(),
+                $name,
                 TypeHelper::typeHintType($this->getType()),
                 ($this->isNullable() ?  new ValueGenerator() : null)
             ) ]
@@ -90,20 +90,24 @@ abstract class PropertyGenerator extends ZendPropertyGenerator
                     '}',
                     'return $this;'
                 )),
-                $this->getName(),
+                $name,
                 Inflector::classify(Inflector::singularize($this->getName()))
             ));
         } else {
-            $method->setBody(implode("\n", array(
-                sprintf('$this->%1$s = $%1$s;', $this->getName()),
-                'return $this;'
-            )));
+            $method->setBody(sprintf(
+                implode("\n", array(
+                    '$this->%1$s = $%2$s;',
+                    'return $this;'
+                )),
+                $this->getName(),
+                $name
+            ));
         }
 
         $method->setDocBlock(
             (new DocBlockGenerator())
                 ->setShortDescription(sprintf(sprintf('Sets the %s.', $name)))
-                ->setTag(new Tag\ParamTag($this->getName(), TypeHelper::docBlockType($this->type, $this->isNullable())))
+                ->setTag(new Tag\ParamTag($name, TypeHelper::docBlockType($this->type, $this->isNullable())))
                 ->setTag(new Tag\ReturnTag('$this'))
         );
 
@@ -146,14 +150,15 @@ abstract class PropertyGenerator extends ZendPropertyGenerator
 
         $method = new MethodGenerator(
             sprintf('add%s', Inflector::classify($name)),
-            [ new ParameterGenerator($this->getName(), TypeHelper::typeHintType($singleType)) ]
+            [ new ParameterGenerator($name, TypeHelper::typeHintType($singleType)) ]
         );
         $method->setBody(sprintf(
             implode("\n", [
-                '$this->%1$s[] = $%1$s;',
+                '$this->%1$s[] = $%2$s;',
                 'return $this;',
             ]),
-            $this->getName()
+            $this->getName(),
+            $name
         ));
 
         $name = Inflector::singularize($this->getName());
@@ -161,7 +166,7 @@ abstract class PropertyGenerator extends ZendPropertyGenerator
             (new DocBlockGenerator())
                 ->setShortDescription(sprintf('Adds an %s.', $name))
                 ->setTag(new Tag\ParamTag(
-                    $this->getName(),
+                    $name,
                     TypeHelper::docBlockType($singleType),
                     sprintf('The %s to add.', $name)
                 ))
@@ -269,18 +274,19 @@ abstract class PropertyGenerator extends ZendPropertyGenerator
 
         $method = new MethodGenerator(
             sprintf('indexOf%s', Inflector::classify($name)),
-            [ new ParameterGenerator($this->getName()) ]
+            [ new ParameterGenerator($name) ]
         );
         $method->setBody(sprintf(
-            'return array_search($%1$s, $this->%1$s, true);',
-            $this->getName()
+            'return array_search($%2$s, $this->%1$s, true);',
+            $this->getName(),
+            $name
         ));
 
         $method->setDocBlock(
             (new DocBlockGenerator())
                 ->setShortDescription(sprintf('Removes the %1$s at the specified key/index.', $name))
                 ->setTag(new Tag\ParamTag(
-                    $this->getName(),
+                    $name,
                     [ TypeHelper::docBlockType($singleType) ],
                     sprintf('The %1$s to search for.', $name)
                 ))

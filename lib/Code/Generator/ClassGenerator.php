@@ -145,6 +145,7 @@ class ClassGenerator extends ZendClassGenerator
             $class->addMethodFromGenerator($property->generateSetter());
 
             if (TypeHelper::isArrayType($property->getType())) {
+                // TODO implements \IteratorAggregate
                 $class->addMethodFromGenerator($property->generateArrayAdd());
                 $class->addMethodFromGenerator($property->generateArraySet());
                 $class->addMethodFromGenerator($property->generateArrayRemove());
@@ -169,6 +170,7 @@ class ClassGenerator extends ZendClassGenerator
 
     private function resolveConstructor(ZendClassGenerator $class)
     {
+        // TODO copy/call parent __construct
         $method = new MethodGenerator('__construct');
         $body = [];
 
@@ -197,6 +199,11 @@ class ClassGenerator extends ZendClassGenerator
                 Inflector::classify($name),
                 $name
             );
+        }
+
+        if (empty($body)) {
+            // No constructor needed since the body is empty
+            return;
         }
         $method->setBody(implode("\n", $body));
 

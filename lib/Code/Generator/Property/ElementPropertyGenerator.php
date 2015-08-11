@@ -1,7 +1,6 @@
 <?php
 namespace Goetas\Xsd\XsdToPhp\Code\Generator\Property;
 
-use Doctrine\Common\Inflector\Inflector;
 use Goetas\XML\XSDReader\Schema\Element\Element;
 use Goetas\XML\XSDReader\Schema\Element\ElementItem;
 use Goetas\XML\XSDReader\Schema\Item;
@@ -14,7 +13,7 @@ class ElementPropertyGenerator extends PropertyGenerator
             throw new \InvalidArgumentException();
         }
 
-        $flags = self::FLAG_PRIVATE;
+        $flags = self::FLAG_PROTECTED;
         if (
             $element instanceof Element &&
             !$element->isNil() &&
@@ -24,7 +23,7 @@ class ElementPropertyGenerator extends PropertyGenerator
         }
 
         parent::__construct(
-            Inflector::camelize($element->getName()),
+            $element->getName(),
             $type,
             $flags
         );

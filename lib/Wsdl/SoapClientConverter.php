@@ -117,7 +117,7 @@ class SoapClientConverter implements Converter
     {
         $method = new MethodGenerator(
             '__construct', [
-            new ParameterGenerator('options', 'array', 'array'),
+            new ParameterGenerator('options', 'array', new ValueGenerator([], ValueGenerator::TYPE_ARRAY)),
             new ParameterGenerator('wsdl', 'string', $schema->getLocation())
         ],
             MethodGenerator::FLAG_PUBLIC,

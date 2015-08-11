@@ -17,7 +17,7 @@ class SimpleTypeClassGenerator extends ClassGenerator
 
     public static function implementSimpleType(ZendClassGenerator $class, $type)
     {
-        $property = new PropertyGenerator('__value', null, PropertyGenerator::FLAG_PRIVATE);
+        $property = new PropertyGenerator('__value', null, PropertyGenerator::FLAG_PROTECTED);
         $property->setDocBlock(new DocBlockGenerator());
         $property->setDocBlock(
             (new DocBlockGenerator())
